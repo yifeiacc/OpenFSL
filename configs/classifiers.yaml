@@ -1,0 +1,108 @@
+classifiers:
+  SimpleShot:
+    default: {
+        1: {
+          'softmax_temperature': 1.0,
+           },
+         }
+    tuning: # For visualisation
+        hparams2tune: ['softmax_temperature']
+        hparam_values: {1: [[1, 5, 10]]}
+
+  TIM_GD:
+    default: {
+        1: {
+          'softmax_temperature': 10.0,
+          'inference_steps': 50,
+          'inference_lr': 0.0001,
+          'loss_weights': [1.0, 1.0, 0.1]
+           },
+        5: {
+          'softmax_temperature': 10.0,
+          'inference_steps': 50,
+          'inference_lr': 0.0001,
+          'loss_weights': [1.0, 1.0, 0.1]
+           },
+             }
+
+    tuning:
+      hparams2tune: ['inference_steps', 'inference_lr', 'loss_weights']
+      hparam_values: {1: [[50, 100, 200, 300], [0.001, 0.0001], [[1.0, 1.0, 0.1], [1.0, 1.0, 0.5], [1.0, 1.0, 1.0]]]}
+
+
+  Finetune:
+    default: {
+        1: {
+          'softmax_temperature': 1.0,
+          'inference_steps': 200,
+          'inference_lr': 0.0001,
+           },
+        5: {
+          'softmax_temperature': 10.0,
+          'inference_steps': 100,
+          'inference_lr': 0.0001,
+           },
+             }
+    tuning:
+      hparams2tune: ['softmax_temperature', 'inference_steps', 'inference_lr']
+      hparam_values: {1: [[1, 5, 10], [50, 100, 200, 300], [0.001, 0.0001]]}
+
+  MAP:
+    default: {
+        1: {
+            'alpha': 0.2,
+            'inference_steps': 10,
+            'lam': 10,
+           },
+        5: {
+            'alpha': 0.2,
+            'inference_steps': 10,
+            'lam': 10,
+           },
+             }
+    tuning:
+      hparams2tune: ['alpha', 'inference_steps', 'lam']
+      hparam_values: {1: [[0.2, 0.3, 0.5], [10, 20, 30], [5, 10, 15]]}
+
+  LaplacianShot:
+    default: {
+        1: {
+            'lambda_': 0.7,
+            'inference_steps': 20,
+            'knn': 3,
+            'softmax_temperature': 1,
+           },
+        5: {
+            'lambda_': 0.1,
+            'inference_steps': 20,
+            'knn': 3,
+            'softmax_temperature': 1,
+           },
+             }
+    tuning:
+      hparams2tune: ['softmax_temperature', 'knn', 'lambda_']
+      hparam_values: {1: [[1, 5, 10], [1, 3, 5, 7], [0.1, 0.3, 0.5, 0.7, 0.8]]}
+
+
+  FEAT:
+    default: {
+        1: {
+            'temperature': 1,
+            'use_euclidean': True,
+           },
+             }
+
+  ICI:
+    default: {
+        1: {
+             'classifier': 'lr',
+             'step': 5,
+             'max_iter': 'auto',
+             'reduce': 'pca',
+             'd': 50,
+             'C': 20,
+            },
+          }
+    tuning:
+      hparams2tune: ['d', 'C']
+      hparam_values: {1: [[1, 5, 10, 20, 50, 100], [0.1, 1.0, 10, 20]]}
