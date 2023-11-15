@@ -35,11 +35,12 @@ class OSEM(AllInOne):
         if P.dim() == 2:
             P = P.unsqueeze(0)  # [1, query_size, n_ways ]
             labels = labels.unsqueeze(0)
+            
         n_runs, n, m = P.shape
         # print(P.shape)
         r = torch.ones(1, n_lsamples + n_usamples).to(P.device)
-        # c = (torch.ones(1, n_ways) * (n_queries + n_shots)).to(P.device)
-        c = (torch.ones(1, n_ways) * (sum(inlier_scores))).to(P.device)
+        c = (torch.ones(1, n_ways) * (n_queries + n_shots)).to(P.device)
+        # c = (torch.ones(1, n_ways) * (sum(inlier_scores))).to(P.device)
         P /= P.view((n_runs, -1)).sum(1).unsqueeze(1).unsqueeze(1)
         u = torch.zeros(n_runs, n).to(P.device)
 
@@ -90,10 +91,12 @@ class OSEM(AllInOne):
         # To measure the distance to the true prototype
         outliers = kwargs["outliers"].bool()
         inliers = ~outliers
+
         true_prototypes = compute_prototypes(
             torch.cat((support_features, query_features[inliers])),
             torch.cat((support_labels, kwargs["query_labels"][inliers])),
         )
+        
         acc_values = []
         auprs = []
         losses = []
@@ -111,21 +114,23 @@ class OSEM(AllInOne):
         n_shots =  int(support_features.size(0)/num_classes)
         n_queries = int(query_features.size(0)/num_classes)
 
+
+        topk = 50
         for _ in range(self.inference_steps):
-            soft_assignements_all = torch.cat([one_hot_labels, soft_assignements])
-            soft_assignements, weight = self.compute_ot(labels=support_labels,
-                                                M=soft_assignements_all,
-                                                n_lsamples=support_features.size(0),
-                                                n_usamples=query_features.size(0),
-                                                n_shots=n_shots,
-                                                n_ways=num_classes,
-                                                n_queries=n_queries,
-                                                inlier_scores=inlier_scores
-                                                )
-            soft_assignements = inlier_scores * soft_assignements[support_features.size(0):] / self.lambda_z
+            # compute all features svd
+            all_inliers_scores = torch.cat([torch.ones(support_size).view(-1,1), inlier_scores])
+            all_features = torch.cat([support_features, query_features], dim=0) * torch.sqrt(all_inliers_scores)
+            cov = (all_features.T @ all_features) 
+            U, S, V = torch.svd(cov)
+            # print(U.shape, S.shape, V.shape)
+
+            query_features_svd = query_features @ U[:, :topk] @ U[:, :topk].T
+            support_features_svd = support_features @ U[:, :topk] @ U[:, :topk].T
+            
+            
             # Compute inlier scores
             logits_q = self.get_logits(
-                prototypes, query_features
+                prototypes, query_features_svd
             )  # [query_size, num_classes]
             inlier_scores = (
                 self.ema_weight
@@ -137,19 +142,36 @@ class OSEM(AllInOne):
                 + (1 - self.ema_weight) * inlier_scores
             )  # [query_size, 1]
 
+            
             # Compute new assignements
-            soft_assignements = (
-                (
-                    self.ema_weight
-                    * ((inlier_scores * logits_q / self.lambda_z).softmax(-1))
-                    + (1 - self.ema_weight) * soft_assignements
-                )
-                if self.use_inlier_latent
-                else (
-                    self.ema_weight * ((logits_q / self.lambda_z).softmax(-1))
-                    + (1 - self.ema_weight) * soft_assignements
-                )
-            )  # [query_size, num_classes]
+            # soft_assignements = (
+            #     (
+            #         self.ema_weight
+            #         * ((inlier_scores * logits_q / self.lambda_z).softmax(-1))
+            #         + (1 - self.ema_weight) * soft_assignements
+            #     )
+            #     if self.use_inlier_latent
+            #     else (
+            #         self.ema_weight * ((logits_q / self.lambda_z).softmax(-1))
+            #         + (1 - self.ema_weight) * soft_assignements
+            #     )
+            # )  # [query_size, num_classes]
+
+            if self.use_inlier_latent:
+                plabels = (inlier_scores * logits_q / self.lambda_z)
+            else: 
+                plabels = (logits_q / self.lambda_z)
+            ot_softmax, weight = self.compute_ot(labels=support_labels,
+                                                M=torch.cat([one_hot_labels, plabels], dim=0),
+                                                n_lsamples=support_features.size(0),
+                                                n_usamples=query_features.size(0),
+                                                n_shots=n_shots,
+                                                n_ways=num_classes,
+                                                n_queries=n_queries,
+                                                inlier_scores=inlier_scores)
+            
+            ot_softmax_q = ot_softmax[support_features.size(0):]
+            soft_assignements = self.ema_weight * ot_softmax_q + (1 - self.ema_weight) * soft_assignements
 
             # Compute metrics
             outlier_scores = 1 - inlier_scores
@@ -170,10 +192,10 @@ class OSEM(AllInOne):
             )
 
             support_loss = soft_cross_entropy(
-                self.get_logits(prototypes, support_features), one_hot_labels
+                self.get_logits(prototypes, support_features_svd), one_hot_labels
             )
             query_loss = soft_cross_entropy(
-                self.get_logits(prototypes, query_features),
+                self.get_logits(prototypes, query_features_svd),
                 soft_assignements,
                 inlier_scores,
             )
@@ -200,7 +222,7 @@ class OSEM(AllInOne):
 
             # Compute new prototypes
             all_features = torch.cat(
-                [support_features, query_features], 0
+                [support_features_svd, query_features_svd], 0
             )  # [support_size + query_size, feature_dim]
             all_assignements = torch.cat(
                 [one_hot_labels, soft_assignements], dim=0
