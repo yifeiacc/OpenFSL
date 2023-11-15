@@ -115,7 +115,7 @@ class OSEM(AllInOne):
         n_queries = int(query_features.size(0)/num_classes)
 
 
-        topk = 50
+        topk = 30
         for _ in range(self.inference_steps):
             # compute all features svd
             all_inliers_scores = torch.cat([torch.ones(support_size).view(-1,1), inlier_scores])
